@@ -1,73 +1,138 @@
+import os
+import wave
+import winsound
+
 import speech_recognition as sr
-import pyttsx3
+from dotenv import load_dotenv
+from google import genai
 
 
-# Create speech recognizer
+# Load environment variables
+load_dotenv()
+
+# Gemini client
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
+
+
+# Speech recognizer
 recognizer = sr.Recognizer()
 
-# Create text-to-speech engine
-engine = pyttsx3.init()
+recognizer.pause_threshold = 2.5
+recognizer.energy_threshold = 300
+recognizer.dynamic_energy_threshold = True
+recognizer.non_speaking_duration = 0.8
 
-# Adjust these settings
-recognizer.pause_threshold = 100
-recognizer.phrase_threshold = 0.3
-recognizer.non_speaking_duration = 0.5
 
+# =========================
+# GEMINI TEXT TO SPEECH
+# =========================
 
 def speak(text):
-    print("Assistant:", text)
-    engine.say(text)
-    engine.runAndWait()
 
+    print("Assistant:", text)
+
+    try:
+
+        response = client.models.generate_content(
+           model="gemini-3.8-flash-lite-tts",
+
+            contents=[
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": text,
+                            "speech_metadata": {
+                                "style": "warm, friendly, natural and conversational"
+                            }
+                        }
+                    ]
+                }
+            ],
+
+            config={
+                "response_modalities": ["AUDIO"],
+                "speech_config": {
+                    "voice_config": {
+                        "voice": "Kore"
+                    }
+                }
+            }
+        )
+
+        # Get generated audio
+        audio_data = response.candidates[0].content.parts[0].inline_data.data
+
+        # Save temporary WAV file
+        filename = "assistant_voice.wav"
+
+        with open(filename, "wb") as f:
+            f.write(audio_data)
+
+        # Play through Windows speakers
+        winsound.PlaySound(
+            filename,
+            winsound.SND_FILENAME
+        )
+
+    except Exception as e:
+
+        print("Voice generation error:", e)
+
+
+# =========================
+# SPEECH TO TEXT
+# =========================
 
 def listen():
 
     with sr.Microphone() as source:
 
-        print("\nAdjusting microphone...")
-        recognizer.adjust_for_ambient_noise(source, duration=1)
+        print("Adjusting microphone...")
 
-        print("Listening... Speak now!")
+        recognizer.adjust_for_ambient_noise(
+            source,
+            duration=1
+        )
+
+        print("🎤 Listening... Speak your COMPLETE sentence.")
 
         try:
+
             audio = recognizer.listen(
                 source,
-                timeout=5,
-                phrase_time_limit=8
+                timeout=None,
+                phrase_time_limit=None
             )
 
-        except sr.WaitTimeoutError:
-            print("No speech detected.")
+        except Exception as e:
+
+            print("Microphone error:", e)
+
             return ""
+
+    print("Processing your speech...")
 
     try:
 
         text = recognizer.recognize_google(audio)
 
-        print("You:", text)
+        print("\nYou:", text)
 
         return text.lower()
 
     except sr.UnknownValueError:
 
-        print("Sorry, I couldn't understand that.")
+        print("Sorry, I couldn't understand the speech.")
 
         return ""
 
-    except sr.RequestError:
+    except sr.RequestError as e:
 
-        print("Speech recognition service is unavailable.")
+        print("Speech recognition service unavailable.")
+
+        print(e)
 
         return ""
-
-
-if __name__ == "__main__":
-
-    speak("Hello. I am ready. Please say something.")
-
-    command = listen()
-
-    if command:
-        speak("You said " + command)
-    else:
-        speak("I didn't hear you.")
